@@ -10,7 +10,7 @@
  * bit-reversal-permutation order and spawning threads.
  *
  * @param X Input dataset, will be overwritten by results.
- * @param N Size of input dataset, must be a power of two.
+ * @param N Size of input dataset, must be a power of two greater than or equal to 2.
  * @param aux the number of threads to spawn, if 0 two threads will be spawned,
  * if negative the reverse Fourier transform will be calculated.
  *
@@ -49,7 +49,7 @@ void partition_pow2(long N, int threads, struct partition_s* parts);
  * @param x Input dataset.
  * @param N Size of input dataset.
  */
-void bit_reversal_permutation(double complex* x, int N);
+void bit_reversal_permutation(double complex* x, long N);
 
 /**
  * @brief The fast Fourier transform. This implementation uses a lookup table,

@@ -4,8 +4,6 @@
 #include <pthread.h>
 #include <stdlib.h>
 
-#define M_TAU 6.28318530717958647692
-
 /**
  * @brief A struct containing all of the information needed by all threads. All
  * of these are unchanging after they are set so no locks are needed to read
@@ -34,9 +32,9 @@ struct thread_args_s {
 
 #ifdef __GNUC__
 #include <limits.h>
-#define bit_length(x) (sizeof(int) * CHAR_BIT - __builtin_clz(x))
+#define bit_length(x) (sizeof(long) * CHAR_BIT - __builtin_clzl(x))
 #else
-unsigned int bit_length(unsigned int x) {
+unsigned int bit_length(unsigned long x) {
   unsigned int bits = 0;
   while (x) {
     bits++;
@@ -70,11 +68,12 @@ struct omega_args_s {
  */
 void* omega_thread(void* p_args) {
   struct omega_args_s* args = p_args;
-  int Nth = (bit_length(args->N) - 1);  // Log2(N)
+  int Nth = (bit_length(args->N));  // Log2(N) + 1
   double complex* omegas = malloc(sizeof(double complex) * Nth);
   if (omegas == NULL) pthread_exit(NULL);
   omegas[0] = CMPLX(-1, 0);
-  for (int j = 1; j < Nth; j++) omegas[j] = csqrt(omegas[j - 1]);
+  omegas[1] = CMPLX(0, -1);
+  for (int j = 2; j < Nth; j++) omegas[j] = csqrt(omegas[j - 1]);
   if (args->inverse)
     for (int j = 1; j < Nth; j++) omegas[j] = conj(omegas[j]);
   pthread_exit(omegas);
@@ -125,6 +124,8 @@ void* fast_fourier_thread(void* p_args) {
 }
 
 int fourier_transform(double complex* X, long N, int aux) {
+  assert((N & (N - 1)) == 0);  // Must be a power of two
+  assert(N > 1);               // Must be at least 2
   if (aux == 0) aux = 2;
   bool inverse = false;
   if (aux < 0) {
@@ -146,6 +147,7 @@ int fourier_transform(double complex* X, long N, int aux) {
   // Get function arguments in order
   struct global_args_s global;
   partition_pow2(N, aux, &global.parts);
+  if(global.parts.portion_b == 0) aux = global.parts.count_a;
   global.X = X;
   global.omegas = omegas;
   global.mutexes = malloc(sizeof(pthread_mutex_t) * aux);
@@ -164,11 +166,11 @@ int fourier_transform(double complex* X, long N, int aux) {
     args[j].id = j;
     args[j].global = &global;
 
-    pthread_create(&threads[j], NULL, &fast_fourier_thread, args);
+    pthread_create(&threads[j], NULL, &fast_fourier_thread, &args[j]);
   }
 
   // Wait for threads to finish, threads will finish in reverse ID order
-  for (int j = aux; j > 0; j++) {
+  for (int j = aux; j > 0; j--) {
     pthread_join(threads[j - 1], NULL);
   }
 
@@ -185,11 +187,13 @@ int fourier_transform(double complex* X, long N, int aux) {
 }
 
 void fft_butterfly(double complex omegas[], double complex X[], long n) {
-  double complex root_of_unity = omegas[bit_length(n) - 2];
+  double complex omega = omegas[bit_length(n) - 2];
+  double complex root_of_unity = 1;
   for (long j = 0; j < n / 2; j++) {
     double complex product = root_of_unity * X[j + n / 2];
     X[j + n / 2] = X[j] - product;
     X[j] = X[j] + product;
+    root_of_unity *= omega;
   }
 }
 
@@ -197,7 +201,7 @@ void fft(double complex omegas[], double complex X[], long N) {
   assert((N & (N - 1)) == 0);  // Must be a power of two
   for (long n = 2; n <= N; n *= 2) {
     double complex omega = omegas[bit_length(n) - 2];
-    double complex root_of_unity = omega;
+    double complex root_of_unity = 1;
     for (long j = 0; j < n / 2; j++) {
       for (long k = 0; k < N; k += n) {
         double complex product = root_of_unity * X[k + j + n / 2];
@@ -240,7 +244,7 @@ unsigned int bit_reverse(unsigned int x, unsigned int n) {
 }
 #endif  // __clang__
 
-void bit_reversal_permutation(double complex* x, int N) {
+void bit_reversal_permutation(double complex* x, long N) {
   assert((N & (N - 1)) == 0);  // Must be a power of two
 
   // Don't forget bit_length is one indexed!
