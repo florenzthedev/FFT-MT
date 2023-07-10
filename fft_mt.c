@@ -69,7 +69,7 @@ struct omega_args_s {
  */
 void* omega_thread(void* p_args) {
   struct omega_args_s* args = p_args;
-  int Nth = (bit_length(args->N));  // Log2(N) + 1
+  int Nth = (bit_length(args->N) - 1);  // Log2(N)
   double complex* omegas = malloc(sizeof(double complex) * Nth);
   if (omegas == NULL) pthread_exit(NULL);
   omegas[0] = CMPLX(-1, 0);
@@ -160,11 +160,9 @@ int fourier_transform(double complex* X, long N, int aux) {
     aux = global.parts.count_a;  // do not spawn threads with nothing to do!
   global.X = X;
   global.omegas = omegas;
-  global.semaphores = malloc(sizeof(sem_t) * (aux + 1));
+  global.semaphores = malloc(sizeof(sem_t) * aux);
   if (global.semaphores == NULL) return 1;
   for (int j = 0; j < aux; j++) sem_init(&global.semaphores[j], 0, 0);
-  sem_init(&global.semaphores[aux], 0, 1);  // extra one at the end for last
-                                            // node
   pthread_t* threads = malloc(sizeof(pthread_t) * aux);
   struct thread_args_s* args = malloc(sizeof(struct thread_args_s) * aux);
   if (threads == NULL) return 1;
@@ -225,7 +223,7 @@ void fft(double complex omegas[], double complex X[], long N) {
 
 void partition_pow2(long N, int threads, struct partition_s* parts) {
   assert((N & (N - 1)) == 0);                    // Must be a power of two
-  int balance = 1 << (bit_length(threads) - 1);  // pow(2,floor(log2(nodes)))
+  int balance = 1 << (bit_length(threads) - 1);  // pow(2,floor(log2(threads)))
   long halfN = N >> 1;
   parts->N = N;
   if (balance >= halfN) {  // Everyone gets 2 or 0
@@ -243,11 +241,11 @@ void partition_pow2(long N, int threads, struct partition_s* parts) {
 }
 
 #ifdef __clang__
-#define bit_reverse(x, n) (__builtin_bitreverse32(x) >> (32 - n))
+#define bit_reverse(x, n) (__builtin_bitreverse64(x) >> (64 - n))
 #else
-unsigned int bit_reverse(unsigned int x, unsigned int n) {
-  unsigned int r = 0;
-  for (unsigned int i = 0; i < n; ++i) {
+unsigned long bit_reverse(unsigned long x, unsigned long n) {
+  unsigned long r = 0;
+  for (unsigned long i = 0; i < n; ++i) {
     if (x & (1 << i)) r |= 1 << ((n - 1) - i);
   }
   return r;
@@ -258,11 +256,11 @@ void bit_reversal_permutation(double complex* x, long N) {
   assert((N & (N - 1)) == 0);  // Must be a power of two
 
   // Don't forget bit_length is one indexed!
-  int bl = bit_length(N) - 1;
+  long bl = bit_length(N) - 1;
 
   // We can skip the first and last index, they never need to be moved
-  for (int i = 1; i < N - 1; i++) {
-    int ri = bit_reverse(i, bl);
+  for (long i = 1; i < N - 1; i++) {
+    long ri = bit_reverse(i, bl);
     if (i < ri) {
       double complex temp = x[i];
       x[i] = x[ri];
