@@ -97,30 +97,43 @@ void* omega_thread(void* p_args) {
  */
 void* fast_fourier_thread(void* p_args) {
   struct thread_args_s* args = p_args;
-  long myPortion, myStart;
+  long my_portion, my_start;
+  long total_a = (args->global->parts.count_a * args->global->parts.portion_a);
 
   // get our starting size and index
   if (args->id < args->global->parts.count_a) {
-    myPortion = args->global->parts.portion_a;
-    myStart = args->id * myPortion;
+    my_portion = args->global->parts.portion_a;
+    my_start = args->id * my_portion;
   } else {
-    myPortion = args->global->parts.portion_b;
-    myStart = (args->global->parts.count_a * args->global->parts.portion_a) +
-              ((args->id - args->global->parts.count_a) * myPortion);
+    my_portion = args->global->parts.portion_b;
+    my_start =
+        total_a + ((args->id - args->global->parts.count_a) * my_portion);
   }
-  if (myPortion == 0) {
+  if (my_portion == 0) {
     pthread_exit(NULL);
   }
 
-  fft(args->global->omegas, &args->global->X[myStart], myPortion);
+  fft(args->global->omegas, &args->global->X[my_start], my_portion);
 
-  int id_offset = 1;
-  while (((myStart + myPortion) % (myPortion * 2))) {
-    myPortion *= 2;
-    sem_wait(&args->global->semaphores[args->id + id_offset]);
-    id_offset *= 2;
-    fft_butterfly(args->global->omegas, &args->global->X[myStart], myPortion);
-    if (myPortion == args->global->parts.N) break;
+  // While we are not the last thread in the next chunk
+  while (((my_start + my_portion) % ((my_portion * 2 < args->global->parts.N)
+                                         ? (my_portion * 2)
+                                         : (args->global->parts.N)))) {
+    // Find the ID to wait on for the next chunk and wait
+    int wait_id;
+    long difference = my_start + my_portion;
+    if (difference > total_a) {
+      wait_id = args->global->parts.count_a;
+      difference -= total_a;
+      wait_id += difference / args->global->parts.portion_b;
+    } else {
+      wait_id = difference / args->global->parts.portion_a;
+    }
+    sem_wait(&args->global->semaphores[wait_id]);
+    // Perform the butterfly operation on the next chunk
+    my_portion *= 2;
+    fft_butterfly(args->global->omegas, &args->global->X[my_start], my_portion);
+    if (my_portion == args->global->parts.N) break;
   }
 
   sem_post(&args->global->semaphores[args->id]);
@@ -225,7 +238,6 @@ void partition_pow2(long N, int threads, struct partition_s* parts) {
     parts->count_a = halfN;
     parts->portion_a = 2;
     parts->count_b = threads - parts->count_a;
-    parts->portion_b = 0;
     return;
   }
   parts->portion_a = N / balance;           // Only ever need two values
