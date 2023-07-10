@@ -114,21 +114,16 @@ void* fast_fourier_thread(void* p_args) {
 
   fft(args->global->omegas, &args->global->X[myStart], myPortion);
 
-  do {
-    // if we are not the last thread in the current cycle wait for the next one
-    if (myPortion + myStart < args->global->parts.N)
-      sem_wait(&args->global->semaphores[args->id + 1]);
-    sem_post(&args->global->semaphores[args->id]);
-    // if our ID is still in play for the next round
-    if (args->id < (args->global->parts.N / (myPortion *= 2))) {
-      myStart = myPortion * args->id;
-      fft_butterfly(args->global->omegas, &args->global->X[myStart], myPortion);
-      sem_post(&args->global->semaphores[args->id]);
-      continue;
-    }
-    break;
-  } while (true);
+  int id_offset = 1;
+  while (((myStart + myPortion) % (myPortion * 2))) {
+    myPortion *= 2;
+    sem_wait(&args->global->semaphores[args->id + id_offset]);
+    id_offset *= 2;
+    fft_butterfly(args->global->omegas, &args->global->X[myStart], myPortion);
+    if (myPortion == args->global->parts.N) break;
+  }
 
+  sem_post(&args->global->semaphores[args->id]);
   pthread_exit(NULL);
 }
 
@@ -176,7 +171,7 @@ int fourier_transform(double complex* X, long N, int aux) {
     pthread_create(&threads[j], NULL, &fast_fourier_thread, &args[j]);
   }
 
-  // Wait for threads to finish, threads will finish in reverse ID order
+  // Wait for threads to finish
   for (int j = aux; j > 0; j--) {
     pthread_join(threads[j - 1], NULL);
   }

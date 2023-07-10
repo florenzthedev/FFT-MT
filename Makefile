@@ -3,7 +3,7 @@
 
 CC = gcc
 LD = gcc
-CFLAGS = -Wall -I$(HEDDIR) -fPIC -fcx-limited-range
+CFLAGS = -Wall -I$(HEDDIR) -fPIC -fcx-limited-range $(EXTRA_CFLAGS)
 LFLAGS = -shared -Wl,-soname,$(EXEC) $(CFLAGS)
 
 HEDDIR = .
