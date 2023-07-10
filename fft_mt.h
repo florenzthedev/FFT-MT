@@ -1,3 +1,6 @@
+// Copyright (c) 2023 Zachary Todd Edwards
+// MIT License
+
 #ifndef FFT_MT_H_INCLUDED
 #define FFT_MT_H_INCLUDED
 
@@ -10,7 +13,8 @@
  * bit-reversal-permutation order and spawning threads.
  *
  * @param X Input dataset, will be overwritten by results.
- * @param N Size of input dataset, must be a power of two greater than or equal to 2.
+ * @param N Size of input dataset, must be a power of two greater than or equal
+ * to 2.
  * @param aux the number of threads to spawn, if 0 two threads will be spawned,
  * if negative the reverse Fourier transform will be calculated.
  *
