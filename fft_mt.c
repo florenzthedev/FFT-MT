@@ -243,9 +243,9 @@ void partition_pow2(long N, int threads, struct partition_s* parts) {
 #ifdef __clang__
 #define bit_reverse(x, n) (__builtin_bitreverse64(x) >> (64 - n))
 #else
-unsigned long bit_reverse(unsigned long x, unsigned long n) {
+unsigned long bit_reverse(unsigned long x, unsigned int n) {
   unsigned long r = 0;
-  for (unsigned long i = 0; i < n; ++i) {
+  for (unsigned int i = 0; i < n; ++i) {
     if (x & (1 << i)) r |= 1 << ((n - 1) - i);
   }
   return r;
