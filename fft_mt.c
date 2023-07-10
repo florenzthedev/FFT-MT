@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <stdlib.h>
 
 /**
@@ -13,7 +14,7 @@
  *
  */
 struct global_args_s {
-  pthread_mutex_t* mutexes;
+  sem_t* semaphores;
   double complex* X;
   double complex* omegas;
   struct partition_s parts;
@@ -112,14 +113,16 @@ void* fast_fourier_thread(void* p_args) {
   }
 
   fft(args->global->omegas, &args->global->X[myStart], myPortion);
+  sem_post(&args->global->semaphores[args->id]);
 
   while (args->id < (args->global->parts.N / (myPortion *= 2))) {
-    pthread_mutex_lock(&args->global->mutexes[args->id + 1]);
+    sem_wait(&args->global->semaphores[args->id + 1]);
     myStart = myPortion * args->id;
     fft_butterfly(args->global->omegas, &args->global->X[myStart], myPortion);
+    sem_post(&args->global->semaphores[args->id]);
   }
 
-  pthread_mutex_unlock(&args->global->mutexes[args->id]);
+  
   pthread_exit(NULL);
 }
 
@@ -147,15 +150,12 @@ int fourier_transform(double complex* X, long N, int aux) {
   // Get function arguments in order
   struct global_args_s global;
   partition_pow2(N, aux, &global.parts);
-  if(global.parts.portion_b == 0) aux = global.parts.count_a;
+  if (global.parts.portion_b == 0) aux = global.parts.count_a;
   global.X = X;
   global.omegas = omegas;
-  global.mutexes = malloc(sizeof(pthread_mutex_t) * aux);
-  if (global.mutexes == NULL) return 1;
-  for (int j = 0; j < aux; j++) {
-    pthread_mutex_init(&global.mutexes[j], NULL);
-    pthread_mutex_lock(&global.mutexes[j]);
-  }
+  global.semaphores = malloc(sizeof(sem_t) * aux);
+  if (global.semaphores == NULL) return 1;
+  for (int j = 0; j < aux; j++) sem_init(&global.semaphores[j], 0, 0);
   pthread_t* threads = malloc(sizeof(pthread_t) * aux);
   struct thread_args_s* args = malloc(sizeof(struct thread_args_s) * aux);
   if (threads == NULL) return 1;
@@ -179,8 +179,9 @@ int fourier_transform(double complex* X, long N, int aux) {
     for (int j = 0; j < N; j++) X[j] /= N;
 
   // Free data and exit
+  for(int j = 0; j < aux; j++) sem_destroy(&global.semaphores[j]);
+  free(global.semaphores);
   free(omegas);
-  free(global.mutexes);
   free(args);
   free(threads);
   return 0;
